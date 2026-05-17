@@ -94,22 +94,30 @@ async def get_authenticated_connection(db: Session, user: User) -> StravaConnect
     return connection
 
 
-async def fetch_activities(connection: StravaConnection) -> list[dict]:
+async def iter_activity_pages(connection: StravaConnection, per_page: int = 100):
     page = 1
-    activities: list[dict] = []
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
             response = await client.get(
                 "https://www.strava.com/api/v3/athlete/activities",
                 headers={"Authorization": f"Bearer {connection.access_token}"},
-                params={"per_page": 100, "page": page},
+                params={"per_page": per_page, "page": page},
             )
             response.raise_for_status()
             batch = response.json()
-            activities.extend(batch)
-            if len(batch) < 100:
-                return activities
+            if not batch:
+                return
+            yield batch
+            if len(batch) < per_page:
+                return
             page += 1
+
+
+async def fetch_activities(connection: StravaConnection) -> list[dict]:
+    activities: list[dict] = []
+    async for batch in iter_activity_pages(connection):
+        activities.extend(batch)
+    return activities
 
 
 async def fetch_activity(connection: StravaConnection, activity_id: int) -> dict:
