@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import time
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select, text, update
@@ -212,9 +212,9 @@ def list_photos(
 
 @app.get("/webhooks/strava")
 def verify_webhook(
-    hub_mode: str,
-    hub_verify_token: str,
-    hub_challenge: str,
+    hub_mode: str = Query(alias="hub.mode"),
+    hub_verify_token: str = Query(alias="hub.verify_token"),
+    hub_challenge: str = Query(alias="hub.challenge"),
 ):
     if hub_mode != "subscribe" or hub_verify_token != settings.strava_verify_token:
         raise HTTPException(status_code=403, detail="Verification failed")
