@@ -14,7 +14,11 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_engine(sqlalchemy_database_url(settings.database_url), future=True)
+engine = create_engine(
+    sqlalchemy_database_url(settings.database_url),
+    future=True,
+    connect_args={"options": f"-csearch_path={settings.db_search_path}"},
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 

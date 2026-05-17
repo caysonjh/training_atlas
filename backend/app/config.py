@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     s3_secret_key: str = "minioadmin"
     s3_bucket: str = "atlas-photos"
     s3_public_base_url: str = "http://localhost:9000/atlas-photos"
+    db_search_path: str = "public"
+    bootstrap_postgis_extension: bool = True
+    embedded_webhook_worker: bool = True
+    webhook_worker_poll_seconds: float = 5.0
+    session_cookie_secure: bool = False
+    session_cookie_samesite: str = "lax"
 
 
 settings = Settings()

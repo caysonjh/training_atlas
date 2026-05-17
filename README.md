@@ -4,17 +4,17 @@ Atlas is a private training map that turns Strava GPS history into sport-specifi
 
 ## Stack
 
-- Next.js frontend
-- FastAPI backend
-- PostgreSQL + PostGIS
-- MinIO-compatible object storage for photo markers
+- Next.js frontend, statically exported for Cloudflare Pages
+- FastAPI backend, hosted as one Render free web service
+- Supabase Postgres + PostGIS for durable spatial storage
+- S3-compatible object storage for photo markers (Supabase Storage or Cloudflare R2 both fit)
 - MapLibre for map rendering
 - OpenFreeMap `positron` style by default for a quiet, route-first basemap
 
 ## Local setup
 
 1. Copy `.env.example` to `.env` and fill in the Strava credentials.
-2. Start infrastructure:
+2. Start local infrastructure:
 
    ```bash
    docker compose up -d db minio
@@ -30,15 +30,7 @@ Atlas is a private training map that turns Strava GPS history into sport-specifi
    uvicorn app.main:app --reload --port 8000
    ```
 
-4. Start the webhook worker in a second backend terminal:
-
-   ```bash
-   cd backend
-   source .venv/bin/activate
-   python -m app.worker
-   ```
-
-5. Start the frontend:
+4. Start the frontend:
 
    ```bash
    cd frontend
@@ -55,48 +47,109 @@ Open `http://localhost:3000`.
 3. Import history fetches historical activities and GPS streams.
 4. Each valid GPS line is compared against previously captured territory for the same user and sport.
 5. Only newly covered geometry is stored and rendered.
-6. Future Strava create webhooks are acknowledged immediately, persisted as jobs, then processed by the worker.
+6. Future Strava create webhooks are acknowledged immediately, persisted as jobs, then processed by the embedded backend worker loop.
 
-## Render deployment
+## Free-first production stack
 
-`render.yaml` defines four resources: the FastAPI web service, a dedicated webhook worker, the Next.js web service, and PostgreSQL. Render Postgres supports PostGIS; after creating the database, enable it once with `CREATE EXTENSION IF NOT EXISTS postgis;` if the restored database has not already done so.
+```text
+Cloudflare Pages  -> static frontend
+Render free web   -> FastAPI API + embedded webhook worker
+Supabase          -> Postgres + PostGIS
+Object storage    -> Supabase Storage or Cloudflare R2
+```
 
-Set the secret env vars in Render before the first live deploy:
+This keeps the long-lived atlas data out of Render's expiring free Postgres tier while preserving a zero-cost path for the personal app.
 
-- `STRAVA_CLIENT_ID`
-- `STRAVA_CLIENT_SECRET`
-- `STRAVA_VERIFY_TOKEN`
-- `STRAVA_WEBHOOK_SECRET` if you enable signed webhook verification
-- `FRONTEND_URL`
-- `BACKEND_URL`
-- the S3-compatible storage settings
-- frontend `NEXT_PUBLIC_API_URL`
+## Supabase setup
 
-Once both public services are live, update the Strava app callback domain to the hosted backend domain and refresh the single Strava webhook subscription:
+1. Create a Supabase project.
+2. In Database -> Extensions, enable `postgis`.
+3. Copy the direct Postgres connection string into the Render backend as `DATABASE_URL`.
+4. Use these Render backend values for Supabase-backed PostGIS:
 
-```bash
-cd backend
-python scripts/strava_subscription.py list
-python scripts/strava_subscription.py refresh --callback-url https://YOUR-BACKEND/webhooks/strava
+   ```env
+   DB_SEARCH_PATH=public,extensions
+   BOOTSTRAP_POSTGIS_EXTENSION=false
+   ```
+
+If you use Supabase Storage for photos, enable its S3 protocol and set the backend `S3_*` env vars from the storage credentials. Cloudflare R2 also works because it is S3-compatible.
+
+## Render backend setup
+
+Create one Render Web Service from this repository:
+
+- Root directory: `backend`
+- Build command: `pip install -e .`
+- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+
+`render.yaml` now describes only that free backend service. Set these env vars in Render:
+
+```env
+DATABASE_URL=
+STRAVA_CLIENT_ID=
+STRAVA_CLIENT_SECRET=
+STRAVA_VERIFY_TOKEN=
+STRAVA_WEBHOOK_SECRET=
+FRONTEND_URL=
+BACKEND_URL=
+S3_ENDPOINT_URL=
+S3_ACCESS_KEY=
+S3_SECRET_KEY=
+S3_BUCKET=
+S3_PUBLIC_BASE_URL=
+DB_SEARCH_PATH=public,extensions
+BOOTSTRAP_POSTGIS_EXTENSION=false
+EMBEDDED_WEBHOOK_WORKER=true
+WEBHOOK_WORKER_POLL_SECONDS=5
+SESSION_COOKIE_SECURE=true
+SESSION_COOKIE_SAMESITE=none
+```
+
+The last two cookie settings are required because the Cloudflare Pages frontend and Render backend use different domains in production.
+
+## Cloudflare Pages frontend setup
+
+Create one Pages project from this repository:
+
+- Root directory: `frontend`
+- Build command: `npm run build`
+- Build output directory: `out`
+
+Set these build-time env vars in Cloudflare Pages:
+
+```env
+NEXT_PUBLIC_API_URL=https://YOUR-RENDER-BACKEND
+NEXT_PUBLIC_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/positron
 ```
 
 ## Migrating the current local atlas
 
-Run this only after the production database exists and before treating production as canonical:
+Run this after Supabase exists and before treating production as canonical:
 
 ```bash
 LOCAL_DATABASE_URL='postgresql+psycopg://...' \
 PRODUCTION_DATABASE_URL='postgresql://...' \
-./scripts/migrate_local_to_render.sh atlas-local.dump
+./scripts/migrate_postgres.sh atlas-local.dump
 ```
 
-That copies users, Strava credentials, activities, tracks, captured geometry, photos, import history, and webhook jobs as a single PostgreSQL restore so the hosted atlas begins with the same terrain already visible locally. Verify the copy before cutover:
+Then verify the copy:
 
 ```bash
 LOCAL_DATABASE_URL='postgresql+psycopg://...' \
 PRODUCTION_DATABASE_URL='postgresql://...' \
 python scripts/verify_migration.py
 ```
+
+
+## Strava production setup
+
+1. In your Strava API app settings, change the callback domain from `localhost` to the Render backend domain.
+2. Register the live webhook after the backend is deployed:
+
+   ```bash
+   cd backend
+   python scripts/strava_subscription.py refresh --callback-url https://YOUR-RENDER-BACKEND/webhooks/strava
+   ```
 
 ## Notes
 

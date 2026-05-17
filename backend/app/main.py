@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import time
@@ -15,7 +16,7 @@ from .models import Activity, ImportJob, ImportJobStatus, PhotoMarker, StravaWeb
 from .schemas import ActivityOut, ImportJobOut, MapStatsOut, PhotoOut, StravaStatusOut
 from .services.coverage import coverage_feature_collection, persist_track_and_new_coverage, total_unique_distance_meters
 from .services.imports import run_history_import
-from .services.webhooks import enqueue_webhook_job
+from .services.webhooks import enqueue_webhook_job, process_pending_jobs
 from .services.storage import upload_photo
 from .services.strava import (
     activity_from_payload,
@@ -39,9 +40,10 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-def startup() -> None:
-    with engine.begin() as connection:
-        connection.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+async def startup() -> None:
+    if settings.bootstrap_postgis_extension:
+        with engine.begin() as connection:
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         db.execute(
@@ -55,6 +57,25 @@ def startup() -> None:
             .values(status=WebhookJobStatus.pending, error="Recovered after worker restart")
         )
         db.commit()
+    if settings.embedded_webhook_worker:
+        app.state.webhook_worker_task = asyncio.create_task(_run_embedded_webhook_worker())
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    task = getattr(app.state, "webhook_worker_task", None)
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _run_embedded_webhook_worker() -> None:
+    while True:
+        await process_pending_jobs()
+        await asyncio.sleep(settings.webhook_worker_poll_seconds)
 
 
 @app.get("/health")
@@ -85,8 +106,8 @@ async def strava_callback(code: str, db: Session = Depends(get_db)):
         key="session",
         value=create_session_token(user.id),
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=settings.session_cookie_samesite,
+        secure=settings.session_cookie_secure,
     )
     return response
 
@@ -219,10 +240,12 @@ def _verify_strava_signature(raw_body: bytes, header: str | None) -> bool:
 
 
 @app.post("/webhooks/strava")
-async def receive_webhook(request: Request, db: Session = Depends(get_db)):
+async def receive_webhook(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     raw_body = await request.body()
     if not _verify_strava_signature(raw_body, request.headers.get("X-Strava-Signature")):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
     event = await request.json()
-    enqueue_webhook_job(db, event)
+    job = enqueue_webhook_job(db, event)
+    if job and settings.embedded_webhook_worker:
+        background_tasks.add_task(process_pending_jobs, 1)
     return Response(status_code=200)
