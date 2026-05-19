@@ -151,6 +151,7 @@ h2 {
   top: 22px;
   right: 24px;
   display: flex;
+  align-items: flex-start;
   gap: 10px;
 }
 
@@ -164,9 +165,38 @@ h2 {
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.05);
 }
 
+.toolbar button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .toolbar .primary {
   color: white;
   background: #d85e32;
+}
+
+.connect-action {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  max-width: 280px;
+}
+
+.connect-feedback {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(249, 247, 242, 0.96);
+  color: var(--muted);
+  padding: 9px 11px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.05);
+}
+
+.connect-feedback.error {
+  border-color: rgba(216, 94, 50, 0.38);
+  color: #9f3f21;
 }
 
 .photo-pin {

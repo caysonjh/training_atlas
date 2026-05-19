@@ -53,6 +53,9 @@ export default function Home() {
   const [caption, setCaption] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [connectingStrava, setConnectingStrava] = useState(false);
+  const [connectNotice, setConnectNotice] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/map/coverage`, { credentials: "include" })
@@ -131,12 +134,47 @@ export default function Home() {
 
   const totalUniqueMiles = ((mapStats?.total_unique_distance_meters ?? 0) / 1609.344).toFixed(1);
   async function connectStrava() {
-    const response = await fetch(`${API_URL}/auth/strava/connect`, {
-      method: "POST",
-      credentials: "include",
-    });
-    const payload = await response.json();
-    window.location.href = payload.url;
+    if (connectingStrava) return;
+    setConnectingStrava(true);
+    setConnectError(null);
+    setConnectNotice("Contacting Strava… Render may need a moment to wake up.");
+
+    const controller = new AbortController();
+    const slowTimer = window.setTimeout(() => {
+      setConnectNotice("Still working — the free backend is probably waking up.");
+    }, 8000);
+    const timeoutTimer = window.setTimeout(() => controller.abort(), 75000);
+
+    try {
+      const response = await fetch(`${API_URL}/auth/strava/connect`, {
+        method: "POST",
+        credentials: "include",
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Atlas returned ${response.status}`);
+      }
+      const payload = await response.json();
+      if (!payload.url) {
+        throw new Error("Atlas did not return a Strava authorization URL");
+      }
+      setConnectNotice("Opening Strava authorization…");
+      window.location.assign(payload.url);
+    } catch (error) {
+      const aborted = error instanceof DOMException && error.name === "AbortError";
+      setConnectError(
+        aborted
+          ? "Strava connection timed out while the backend was waking. Please try again."
+          : error instanceof Error
+            ? error.message
+            : "Unable to start Strava connection."
+      );
+      setConnectNotice(null);
+      setConnectingStrava(false);
+    } finally {
+      window.clearTimeout(slowTimer);
+      window.clearTimeout(timeoutTimer);
+    }
   }
 
   async function importHistory() {
@@ -287,9 +325,16 @@ export default function Home() {
           <button onClick={importHistory} disabled={importing}>
             {importing ? "Importing…" : "Import history"}
           </button>
-          <button className="primary" onClick={connectStrava}>
-            {stravaStatus?.connected ? "Reconnect Strava" : "Connect Strava"}
-          </button>
+          <div className="connect-action">
+            <button className="primary" onClick={connectStrava} disabled={connectingStrava}>
+              {connectingStrava ? "Connecting…" : stravaStatus?.connected ? "Reconnect Strava" : "Connect Strava"}
+            </button>
+            {(connectNotice || connectError) && (
+              <p className={connectError ? "connect-feedback error" : "connect-feedback"} role="status" aria-live="polite">
+                {connectError ?? connectNotice}
+              </p>
+            )}
+          </div>
         </header>
         <div ref={mapNode} className="map" />
       </section>
