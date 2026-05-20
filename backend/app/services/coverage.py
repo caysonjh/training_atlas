@@ -1,11 +1,11 @@
 import json
 
-from geoalchemy2.shape import from_shape, to_shape
+from geoalchemy2.shape import from_shape
 from shapely import GeometryCollection, LineString, MultiLineString, unary_union
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ..models import Activity, ActivityType, CapturedGeometry, RawTrack
+from ..models import Activity, RawTrack
 
 
 def normalize_track(points: list[list[float]]) -> LineString | None:
@@ -45,36 +45,54 @@ def persist_track_and_new_coverage(db: Session, activity: Activity, points: list
 
     raw = RawTrack(activity_id=activity.id, geometry=from_shape(line, srid=4326))
     db.add(raw)
+    db.flush()
 
-    existing_rows = db.scalars(
-        select(CapturedGeometry).where(
-            CapturedGeometry.user_id == activity.user_id,
-            CapturedGeometry.atlas_type == activity.atlas_type,
-        )
-    ).all()
-    uncovered_multi = calculate_new_coverage(line, [to_shape(row.geometry) for row in existing_rows])
-    if not uncovered_multi:
-        return False
-
-    db.add(
-        CapturedGeometry(
-            user_id=activity.user_id,
-            atlas_type=activity.atlas_type,
-            source_activity_id=activity.id,
-            geometry=from_shape(uncovered_multi, srid=4326),
-        )
+    inserted_id = db.scalar(
+        text(
+            """
+            with incoming as (
+                select ST_SetSRID(ST_GeomFromText(:line_wkt), 4326) as geometry
+            ), existing as (
+                select ST_Buffer(ST_UnaryUnion(ST_Collect(geometry)), 0.00003) as geometry
+                from captured_geometries
+                where user_id = :user_id and atlas_type = :atlas_type
+            ), uncovered as (
+                select
+                    case
+                        when existing.geometry is null then incoming.geometry
+                        else ST_Difference(incoming.geometry, existing.geometry)
+                    end as geometry
+                from incoming
+                left join existing on true
+            ), lines as (
+                select ST_Multi(ST_CollectionExtract(geometry, 2)) as geometry
+                from uncovered
+            )
+            insert into captured_geometries (user_id, atlas_type, source_activity_id, geometry, created_at)
+            select :user_id, cast(:atlas_type as activitytype), :activity_id, geometry, now()
+            from lines
+            where not ST_IsEmpty(geometry) and ST_Length(geometry::geography) > 0
+            returning id
+            """
+        ),
+        {
+            "line_wkt": line.wkt,
+            "user_id": activity.user_id,
+            "atlas_type": activity.atlas_type.value,
+            "activity_id": activity.id,
+        },
     )
-    return True
+    return inserted_id is not None
 
 
 def coverage_feature_collection(db: Session, user_id: int) -> dict:
     rows = db.execute(
         text(
             """
-            select atlas_type, ST_AsGeoJSON(ST_UnaryUnion(ST_Collect(geometry))) as geometry
+            select atlas_type, ST_AsGeoJSON(geometry) as geometry
             from captured_geometries
             where user_id = :user_id
-            group by atlas_type
+            order by id
             """
         ),
         {"user_id": user_id},
@@ -98,7 +116,7 @@ def total_unique_distance_meters(db: Session, user_id: int) -> float:
     result = db.scalar(
         text(
             """
-            select coalesce(ST_Length(ST_UnaryUnion(ST_Collect(geometry))::geography), 0)
+            select coalesce(sum(ST_Length(geometry::geography)), 0)
             from captured_geometries
             where user_id = :user_id
             """
