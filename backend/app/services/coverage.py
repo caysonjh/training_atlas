@@ -1,4 +1,4 @@
-from collections import defaultdict
+import json
 
 from geoalchemy2.shape import from_shape, to_shape
 from shapely import GeometryCollection, LineString, MultiLineString, unary_union
@@ -68,19 +68,27 @@ def persist_track_and_new_coverage(db: Session, activity: Activity, points: list
 
 
 def coverage_feature_collection(db: Session, user_id: int) -> dict:
-    rows = db.scalars(select(CapturedGeometry).where(CapturedGeometry.user_id == user_id)).all()
-    grouped = defaultdict(list)
-    for row in rows:
-        grouped[row.atlas_type.value].append(to_shape(row.geometry))
+    rows = db.execute(
+        text(
+            """
+            select atlas_type, ST_AsGeoJSON(ST_UnaryUnion(ST_Collect(geometry))) as geometry
+            from captured_geometries
+            where user_id = :user_id
+            group by atlas_type
+            """
+        ),
+        {"user_id": user_id},
+    ).all()
 
     features = []
-    for atlas_type, geometries in grouped.items():
-        merged = unary_union(geometries)
+    for atlas_type, geometry_json in rows:
+        if not geometry_json:
+            continue
         features.append(
             {
                 "type": "Feature",
                 "properties": {"atlas_type": atlas_type},
-                "geometry": merged.__geo_interface__,
+                "geometry": json.loads(geometry_json),
             }
         )
     return {"type": "FeatureCollection", "features": features}

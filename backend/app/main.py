@@ -1,4 +1,3 @@
-import asyncio
 import hashlib
 import hmac
 import time
@@ -14,20 +13,7 @@ from .config import settings
 from .db import Base, SessionLocal, engine, get_db
 from .models import Activity, ImportJob, ImportJobStatus, PhotoMarker, StravaWebhookJob, User, WebhookJobStatus
 from .schemas import ActivityOut, ImportJobOut, MapStatsOut, PhotoOut, StravaStatusOut
-from .services.coverage import coverage_feature_collection, persist_track_and_new_coverage, total_unique_distance_meters
-from .services.imports import run_history_import
-from .services.webhooks import enqueue_webhook_job, process_pending_jobs
-from .services.storage import upload_photo
-from .services.strava import (
-    activity_from_payload,
-    exchange_code,
-    fetch_activities,
-    fetch_activity,
-    fetch_latlng_stream,
-    get_authenticated_connection,
-    oauth_url,
-    upsert_user_and_connection,
-)
+from .services.strava import exchange_code, oauth_url, upsert_user_and_connection
 
 app = FastAPI(title="Atlas API")
 app.add_middleware(
@@ -57,25 +43,6 @@ async def startup() -> None:
             .values(status=WebhookJobStatus.pending, error="Recovered after worker restart")
         )
         db.commit()
-    if settings.embedded_webhook_worker:
-        app.state.webhook_worker_task = asyncio.create_task(_run_embedded_webhook_worker())
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    task = getattr(app.state, "webhook_worker_task", None)
-    if task:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-
-
-async def _run_embedded_webhook_worker() -> None:
-    while True:
-        await process_pending_jobs()
-        await asyncio.sleep(settings.webhook_worker_poll_seconds)
 
 
 @app.get("/health")
@@ -133,6 +100,8 @@ async def import_history(
     db.add(job)
     db.commit()
     db.refresh(job)
+    from .services.imports import run_history_import
+
     background_tasks.add_task(run_history_import, job.id, current_user.id)
     return job
 
@@ -152,6 +121,8 @@ def get_coverage(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from .services.coverage import coverage_feature_collection
+
     return coverage_feature_collection(db, current_user.id)
 
 
@@ -160,6 +131,8 @@ def get_map_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from .services.coverage import total_unique_distance_meters
+
     return MapStatsOut(total_unique_distance_meters=total_unique_distance_meters(db, current_user.id))
 
 
@@ -187,6 +160,8 @@ async def create_photo(
         activity = db.get(Activity, activity_id)
         if not activity or activity.user_id != current_user.id:
             raise HTTPException(status_code=404, detail="Activity not found")
+    from .services.storage import upload_photo
+
     image_url = await upload_photo(file)
     marker = PhotoMarker(
         user_id=current_user.id,
@@ -245,6 +220,8 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks, d
     if not _verify_strava_signature(raw_body, request.headers.get("X-Strava-Signature")):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
     event = await request.json()
+    from .services.webhooks import enqueue_webhook_job, process_pending_jobs
+
     job = enqueue_webhook_job(db, event)
     if job and settings.embedded_webhook_worker:
         background_tasks.add_task(process_pending_jobs, 1)
