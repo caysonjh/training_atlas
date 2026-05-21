@@ -30,7 +30,8 @@ async def startup() -> None:
     if settings.bootstrap_postgis_extension:
         with engine.begin() as connection:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
-    Base.metadata.create_all(bind=engine)
+    if settings.create_tables_on_startup:
+        Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         db.execute(
             update(ImportJob)

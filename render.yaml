@@ -37,6 +37,8 @@ services:
         value: public,extensions
       - key: BOOTSTRAP_POSTGIS_EXTENSION
         value: false
+      - key: CREATE_TABLES_ON_STARTUP
+        value: false
       - key: EMBEDDED_WEBHOOK_WORKER
         value: true
       - key: WEBHOOK_WORKER_POLL_SECONDS
@@ -45,3 +47,9 @@ services:
         value: true
       - key: SESSION_COOKIE_SAMESITE
         value: none
+      - key: DB_POOL_SIZE
+        value: 1
+      - key: DB_MAX_OVERFLOW
+        value: 0
+      - key: DB_POOL_TIMEOUT_SECONDS
+        value: 5

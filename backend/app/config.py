@@ -24,10 +24,14 @@ class Settings(BaseSettings):
     s3_public_base_url: str = "http://localhost:9000/atlas-photos"
     db_search_path: str = "public"
     bootstrap_postgis_extension: bool = True
+    create_tables_on_startup: bool = True
     embedded_webhook_worker: bool = True
     webhook_worker_poll_seconds: float = 5.0
     session_cookie_secure: bool = False
     session_cookie_samesite: str = "lax"
+    db_pool_size: int = 1
+    db_max_overflow: int = 0
+    db_pool_timeout_seconds: int = 5
 
 
 settings = Settings()
