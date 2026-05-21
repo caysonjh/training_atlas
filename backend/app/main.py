@@ -121,7 +121,7 @@ def get_coverage(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from .services.coverage import coverage_feature_collection
+    from .services.coverage_sql import coverage_feature_collection
 
     return coverage_feature_collection(db, current_user.id)
 
@@ -131,7 +131,7 @@ def get_map_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from .services.coverage import total_unique_distance_meters
+    from .services.coverage_sql import total_unique_distance_meters
 
     return MapStatsOut(total_unique_distance_meters=total_unique_distance_meters(db, current_user.id))
 

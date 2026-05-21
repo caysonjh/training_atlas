@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..db import SessionLocal
 from ..models import Activity, StravaWebhookJob, User, WebhookJobStatus
-from .coverage import persist_track_and_new_coverage
+from .coverage_sql import persist_track_and_new_coverage
 from .strava import activity_from_payload, fetch_activity, fetch_latlng_stream, get_authenticated_connection
 
 

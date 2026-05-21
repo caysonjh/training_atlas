@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from ..db import SessionLocal
 from ..models import Activity, ImportJob, ImportJobStatus, User
-from .coverage import persist_track_and_new_coverage
+from .coverage_sql import persist_track_and_new_coverage
 from .strava import (
     activity_from_payload,
     iter_activity_pages,
@@ -29,7 +29,7 @@ async def run_history_import(job_id: int, user_id: int) -> None:
         has_existing_activities = db.scalar(select(Activity.id).where(Activity.user_id == user.id).limit(1)) is not None
         consecutive_existing = 0
 
-        async for batch in iter_activity_pages(connection):
+        async for batch in iter_activity_pages(connection, per_page=30):
             for payload in batch:
                 job.activities_seen += 1
                 existing = db.scalar(
@@ -54,7 +54,7 @@ async def run_history_import(job_id: int, user_id: int) -> None:
                 db.commit()
 
             db.commit()
-            if has_existing_activities and consecutive_existing >= 100:
+            if has_existing_activities and consecutive_existing >= 30:
                 break
 
         job.status = ImportJobStatus.completed
