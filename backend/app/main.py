@@ -32,18 +32,19 @@ async def startup() -> None:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
     if settings.create_tables_on_startup:
         Base.metadata.create_all(bind=engine)
-    with SessionLocal() as db:
-        db.execute(
-            update(ImportJob)
-            .where(ImportJob.status.in_([ImportJobStatus.pending, ImportJobStatus.running]))
-            .values(status=ImportJobStatus.failed, error="Interrupted by backend restart")
-        )
-        db.execute(
-            update(StravaWebhookJob)
-            .where(StravaWebhookJob.status == WebhookJobStatus.running)
-            .values(status=WebhookJobStatus.pending, error="Recovered after worker restart")
-        )
-        db.commit()
+    if settings.recover_jobs_on_startup:
+        with SessionLocal() as db:
+            db.execute(
+                update(ImportJob)
+                .where(ImportJob.status.in_([ImportJobStatus.pending, ImportJobStatus.running]))
+                .values(status=ImportJobStatus.failed, error="Interrupted by backend restart")
+            )
+            db.execute(
+                update(StravaWebhookJob)
+                .where(StravaWebhookJob.status == WebhookJobStatus.running)
+                .values(status=WebhookJobStatus.pending, error="Recovered after worker restart")
+            )
+            db.commit()
 
 
 @app.get("/health")

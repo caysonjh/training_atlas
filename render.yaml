@@ -39,6 +39,8 @@ services:
         value: false
       - key: CREATE_TABLES_ON_STARTUP
         value: false
+      - key: RECOVER_JOBS_ON_STARTUP
+        value: false
       - key: EMBEDDED_WEBHOOK_WORKER
         value: true
       - key: WEBHOOK_WORKER_POLL_SECONDS

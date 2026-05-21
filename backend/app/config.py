@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     db_search_path: str = "public"
     bootstrap_postgis_extension: bool = True
     create_tables_on_startup: bool = True
+    recover_jobs_on_startup: bool = True
     embedded_webhook_worker: bool = True
     webhook_worker_poll_seconds: float = 5.0
     session_cookie_secure: bool = False
