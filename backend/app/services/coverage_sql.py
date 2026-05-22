@@ -51,14 +51,18 @@ def persist_track_and_new_coverage(db: Session, activity: Activity, points: list
                     end as geometry
                 from raw_insert
                 left join existing on true
-            ), lines as (
-                select ST_Multi(ST_CollectionExtract(geometry, 2)) as geometry
+            ), uncovered_parts as (
+                select (ST_Dump(ST_CollectionExtract(geometry, 2))).geom as geometry
                 from uncovered
+            ), cleaned as (
+                select ST_Multi(ST_CollectionExtract(ST_Collect(geometry), 2)) as geometry
+                from uncovered_parts
+                where ST_Length(geometry::geography) >= :min_segment_meters
             )
             insert into captured_geometries (user_id, atlas_type, source_activity_id, geometry, created_at)
             select :user_id, cast(:atlas_type as activitytype), :activity_id, geometry, now()
-            from lines
-            where not ST_IsEmpty(geometry) and ST_Length(geometry::geography) > 0
+            from cleaned
+            where geometry is not null and not ST_IsEmpty(geometry) and ST_Length(geometry::geography) > 0
             returning id
             """
         ),
@@ -68,6 +72,7 @@ def persist_track_and_new_coverage(db: Session, activity: Activity, points: list
             "atlas_type": activity.atlas_type.value,
             "activity_id": activity.id,
             "lookup_degrees": settings.coverage_lookup_degrees,
+            "min_segment_meters": settings.captured_min_segment_meters,
         },
     )
     return inserted_id is not None

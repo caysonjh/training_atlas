@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     strava_sync_overlap_days: int = 7
     strava_full_import_existing_stop_after: int = 200
     coverage_lookup_degrees: float = 0.02
+    captured_min_segment_meters: float = 10.0
 
 
 settings = Settings()
