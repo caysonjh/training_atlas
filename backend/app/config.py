@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     webhook_worker_poll_seconds: float = 5.0
     session_cookie_secure: bool = False
     session_cookie_samesite: str = "lax"
-    db_pool_size: int = 1
+    db_pool_size: int = 5
     db_max_overflow: int = 0
-    db_pool_timeout_seconds: int = 5
+    db_pool_timeout_seconds: int = 10
     strava_import_page_size: int = 30
     strava_sync_overlap_days: int = 7
     strava_full_import_existing_stop_after: int = 30

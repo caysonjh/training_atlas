@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import time
+from datetime import datetime, timedelta
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -105,6 +106,18 @@ def _latest_import_job(db: Session, user_id: int) -> ImportJob | None:
     return db.scalar(select(ImportJob).where(ImportJob.user_id == user_id).order_by(ImportJob.created_at.desc()).limit(1))
 
 
+def _is_stale_import_job(job: ImportJob) -> bool:
+    reference_time = job.started_at or job.created_at
+    return reference_time is not None and reference_time < datetime.utcnow() - timedelta(minutes=2)
+
+
+def _fail_stale_import_job(db: Session, job: ImportJob) -> None:
+    job.status = ImportJobStatus.failed
+    job.error = "Sync was interrupted before it could finish"
+    job.finished_at = datetime.utcnow()
+    db.commit()
+
+
 def _create_import_job(db: Session, user_id: int) -> ImportJob:
     job = ImportJob(user_id=user_id)
     db.add(job)
@@ -122,7 +135,9 @@ async def sync_strava(
 ):
     active_job = _latest_active_import_job(db, current_user.id)
     if active_job:
-        return active_job
+        if not _is_stale_import_job(active_job):
+            return active_job
+        _fail_stale_import_job(db, active_job)
     job = _create_import_job(db, current_user.id)
     from .services.imports import run_strava_sync
 
