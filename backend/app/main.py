@@ -16,9 +16,17 @@ from .schemas import ActivityOut, ImportJobOut, MapStatsOut, PhotoOut, StravaSta
 from .services.strava import exchange_code, oauth_url, upsert_user_and_connection
 
 app = FastAPI(title="Atlas API")
+local_dev_origins = {
+    settings.frontend_url,
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+}
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url],
+    allow_origins=sorted(local_dev_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

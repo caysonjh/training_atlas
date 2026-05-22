@@ -35,6 +35,15 @@ type MapStats = {
   total_unique_distance_meters: number;
 };
 
+async function fetchJson<T>(path: string, fallback: T, options?: RequestInit): Promise<T> {
+  try {
+    const response = await fetch(`${API_URL}${path}`, { credentials: "include", ...options });
+    return response.ok ? await response.json() : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function Home() {
   const mapNode = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
@@ -56,28 +65,37 @@ export default function Home() {
   const [connectingStrava, setConnectingStrava] = useState(false);
   const [connectNotice, setConnectNotice] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_URL}/map/coverage`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : { type: "FeatureCollection", features: [] }))
-      .then(setCoverage);
-    fetch(`${API_URL}/photos`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : []))
-      .then(setPhotos);
-    fetch(`${API_URL}/sync/strava/latest`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((job) => {
-        if (job) {
-          setImportJob(job);
-          setImporting(job.status === "pending" || job.status === "running");
-        }
-      });
-    fetch(`${API_URL}/auth/strava/status`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : { connected: false }))
-      .then(setStravaStatus);
-    fetch(`${API_URL}/map/stats`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : { total_unique_distance_meters: 0 }))
-      .then(setMapStats);
+    async function loadAtlas() {
+      const backendReachable = await fetch(`${API_URL}/health`, { credentials: "include" })
+        .then((response) => response.ok)
+        .catch(() => false);
+      setApiError(backendReachable ? null : "Atlas backend is not reachable. Make sure the local backend is running on port 8000.");
+
+      const [coveragePayload, photoPayload, latestJob, statusPayload, statsPayload] = await Promise.all([
+        fetchJson<FeatureCollection>("/map/coverage", { type: "FeatureCollection", features: [] }),
+        fetchJson<Photo[]>("/photos", []),
+        fetchJson<ImportJob | null>("/sync/strava/latest", null),
+        fetchJson<StravaStatus>("/auth/strava/status", { connected: false }),
+        fetchJson<MapStats>("/map/stats", { total_unique_distance_meters: 0 }),
+      ]);
+      setCoverage(coveragePayload);
+      setPhotos(photoPayload);
+      if (latestJob) {
+        setImportJob(latestJob);
+        setImporting(latestJob.status === "pending" || latestJob.status === "running");
+      }
+      setStravaStatus(statusPayload);
+      setMapStats(statsPayload);
+    }
+
+    loadAtlas().catch(() => {
+      setApiError("Atlas backend is not reachable. Make sure the local backend is running on port 8000.");
+      setStravaStatus({ connected: false });
+      setMapStats({ total_unique_distance_meters: 0 });
+    });
   }, []);
 
   useEffect(() => {
@@ -179,27 +197,36 @@ export default function Home() {
 
   async function syncStrava() {
     setImporting(true);
-    const response = await fetch(`${API_URL}/sync/strava`, { method: "POST", credentials: "include" });
-    const job = await response.json();
-    setImportJob(job);
-    if (!response.ok) {
+    setApiError(null);
+    try {
+      const response = await fetch(`${API_URL}/sync/strava`, { method: "POST", credentials: "include" });
+      const job = await response.json();
+      setImportJob(job);
+      if (!response.ok) {
+        setImporting(false);
+      }
+    } catch {
       setImporting(false);
+      setApiError("Atlas backend is not reachable. Make sure the local backend is running on port 8000.");
     }
   }
 
   useEffect(() => {
     if (!importing || !importJob) return;
     const timer = window.setInterval(async () => {
-      const response = await fetch(`${API_URL}/sync/strava/latest`, { credentials: "include" });
-      if (!response.ok) return;
-      const job = await response.json();
-      setImportJob(job);
-      if (job.status === "completed" || job.status === "failed") {
+      try {
+        const response = await fetch(`${API_URL}/sync/strava/latest`, { credentials: "include" });
+        if (!response.ok) return;
+        const job = await response.json();
+        setImportJob(job);
+        if (job.status === "completed" || job.status === "failed") {
+          setImporting(false);
+          setCoverage(await fetchJson<FeatureCollection>("/map/coverage", { type: "FeatureCollection", features: [] }));
+          setMapStats(await fetchJson<MapStats>("/map/stats", { total_unique_distance_meters: 0 }));
+        }
+      } catch {
         setImporting(false);
-        const coverageResponse = await fetch(`${API_URL}/map/coverage`, { credentials: "include" });
-        setCoverage(await coverageResponse.json());
-        const statsResponse = await fetch(`${API_URL}/map/stats`, { credentials: "include" });
-        setMapStats(await statsResponse.json());
+        setApiError("Atlas backend is not reachable. Make sure the local backend is running on port 8000.");
       }
     }, 2000);
     return () => window.clearInterval(timer);
@@ -328,6 +355,7 @@ export default function Home() {
           <button onClick={syncStrava} disabled={importing || !stravaStatus?.connected}>
             {importing ? "Syncing…" : "Sync Strava"}
           </button>
+          {apiError && <p className="connect-feedback error" role="status">{apiError}</p>}
           <div className="connect-action">
             <button className="primary" onClick={connectStrava} disabled={connectingStrava}>
               {connectingStrava ? "Connecting…" : stravaStatus?.connected ? "Reconnect Strava" : "Connect Strava"}
