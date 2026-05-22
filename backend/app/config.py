@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     db_pool_size: int = 1
     db_max_overflow: int = 0
     db_pool_timeout_seconds: int = 5
+    strava_import_page_size: int = 30
+    strava_sync_overlap_days: int = 7
+    strava_full_import_existing_stop_after: int = 30
 
 
 settings = Settings()

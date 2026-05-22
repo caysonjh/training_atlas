@@ -64,7 +64,7 @@ export default function Home() {
     fetch(`${API_URL}/photos`, { credentials: "include" })
       .then((res) => (res.ok ? res.json() : []))
       .then(setPhotos);
-    fetch(`${API_URL}/imports/strava/history/latest`, { credentials: "include" })
+    fetch(`${API_URL}/sync/strava/latest`, { credentials: "include" })
       .then((res) => (res.ok ? res.json() : null))
       .then((job) => {
         if (job) {
@@ -137,11 +137,11 @@ export default function Home() {
     if (connectingStrava) return;
     setConnectingStrava(true);
     setConnectError(null);
-    setConnectNotice("Contacting Strava… Render may need a moment to wake up.");
+    setConnectNotice("Contacting the local Atlas backend…");
 
     const controller = new AbortController();
     const slowTimer = window.setTimeout(() => {
-      setConnectNotice("Still working — the free backend is probably waking up.");
+      setConnectNotice("Still working — check that the local backend is running on port 8000.");
     }, 8000);
     const timeoutTimer = window.setTimeout(() => controller.abort(), 75000);
 
@@ -164,7 +164,7 @@ export default function Home() {
       const aborted = error instanceof DOMException && error.name === "AbortError";
       setConnectError(
         aborted
-          ? "Strava connection timed out while the backend was waking. Please try again."
+          ? "Strava connection timed out. Check that the local backend is running, then try again."
           : error instanceof Error
             ? error.message
             : "Unable to start Strava connection."
@@ -177,17 +177,20 @@ export default function Home() {
     }
   }
 
-  async function importHistory() {
+  async function syncStrava() {
     setImporting(true);
-    const response = await fetch(`${API_URL}/imports/strava/history`, { method: "POST", credentials: "include" });
+    const response = await fetch(`${API_URL}/sync/strava`, { method: "POST", credentials: "include" });
     const job = await response.json();
     setImportJob(job);
+    if (!response.ok) {
+      setImporting(false);
+    }
   }
 
   useEffect(() => {
     if (!importing || !importJob) return;
     const timer = window.setInterval(async () => {
-      const response = await fetch(`${API_URL}/imports/strava/history/latest`, { credentials: "include" });
+      const response = await fetch(`${API_URL}/sync/strava/latest`, { credentials: "include" });
       if (!response.ok) return;
       const job = await response.json();
       setImportJob(job);
@@ -309,11 +312,11 @@ export default function Home() {
           </div>
           {importJob && (
             <div>
-              <dt>Import</dt>
+              <dt>Sync</dt>
               <dd className="import-status">
                 {importJob.status === "failed"
                   ? importJob.error ?? "Failed"
-                  : `${importJob.activities_imported}/${importJob.activities_seen || "…"} activities`}
+                  : `${importJob.activities_imported} new / ${importJob.activities_seen || "…"} checked`}
               </dd>
             </div>
           )}
@@ -322,8 +325,8 @@ export default function Home() {
 
       <section className="map-wrap">
         <header className="toolbar">
-          <button onClick={importHistory} disabled={importing}>
-            {importing ? "Importing…" : "Import history"}
+          <button onClick={syncStrava} disabled={importing || !stravaStatus?.connected}>
+            {importing ? "Syncing…" : "Sync Strava"}
           </button>
           <div className="connect-action">
             <button className="primary" onClick={connectStrava} disabled={connectingStrava}>

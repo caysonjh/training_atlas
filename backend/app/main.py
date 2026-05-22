@@ -81,31 +81,62 @@ async def strava_callback(code: str, db: Session = Depends(get_db)):
     return response
 
 
+def _latest_active_import_job(db: Session, user_id: int) -> ImportJob | None:
+    return db.scalar(
+        select(ImportJob)
+        .where(
+            ImportJob.user_id == user_id,
+            ImportJob.status.in_([ImportJobStatus.pending, ImportJobStatus.running]),
+        )
+        .order_by(ImportJob.created_at.desc())
+        .limit(1)
+    )
+
+
+def _latest_import_job(db: Session, user_id: int) -> ImportJob | None:
+    return db.scalar(select(ImportJob).where(ImportJob.user_id == user_id).order_by(ImportJob.created_at.desc()).limit(1))
+
+
+def _create_import_job(db: Session, user_id: int) -> ImportJob:
+    job = ImportJob(user_id=user_id)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@app.post("/sync/strava", response_model=ImportJobOut)
+async def sync_strava(
+    background_tasks: BackgroundTasks,
+    full: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    active_job = _latest_active_import_job(db, current_user.id)
+    if active_job:
+        return active_job
+    job = _create_import_job(db, current_user.id)
+    from .services.imports import run_strava_sync
+
+    background_tasks.add_task(run_strava_sync, job.id, current_user.id, full=full)
+    return job
+
+
+@app.get("/sync/strava/latest", response_model=ImportJobOut | None)
+def latest_sync(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return _latest_import_job(db, current_user.id)
+
+
 @app.post("/imports/strava/history", response_model=ImportJobOut)
 async def import_history(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    active_job = db.scalar(
-        select(ImportJob)
-        .where(
-            ImportJob.user_id == current_user.id,
-            ImportJob.status.in_([ImportJobStatus.pending, ImportJobStatus.running]),
-        )
-        .order_by(ImportJob.created_at.desc())
-        .limit(1)
-    )
-    if active_job:
-        return active_job
-    job = ImportJob(user_id=current_user.id)
-    db.add(job)
-    db.commit()
-    db.refresh(job)
-    from .services.imports import run_history_import
-
-    background_tasks.add_task(run_history_import, job.id, current_user.id)
-    return job
+    return await sync_strava(background_tasks, True, db, current_user)
 
 
 @app.get("/imports/strava/history/latest", response_model=ImportJobOut | None)
@@ -113,9 +144,7 @@ def latest_import(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return db.scalar(
-        select(ImportJob).where(ImportJob.user_id == current_user.id).order_by(ImportJob.created_at.desc()).limit(1)
-    )
+    return _latest_import_job(db, current_user.id)
 
 
 @app.get("/map/coverage")

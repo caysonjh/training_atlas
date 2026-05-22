@@ -94,14 +94,17 @@ async def get_authenticated_connection(db: Session, user: User) -> StravaConnect
     return connection
 
 
-async def iter_activity_pages(connection: StravaConnection, per_page: int = 100):
+async def iter_activity_pages(connection: StravaConnection, per_page: int = 100, after: int | None = None):
     page = 1
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
+            params = {"per_page": per_page, "page": page}
+            if after is not None:
+                params["after"] = after
             response = await client.get(
                 "https://www.strava.com/api/v3/athlete/activities",
                 headers={"Authorization": f"Bearer {connection.access_token}"},
-                params={"per_page": per_page, "page": page},
+                params=params,
             )
             response.raise_for_status()
             batch = response.json()

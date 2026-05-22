@@ -1,20 +1,35 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 
+from ..config import settings
 from ..db import SessionLocal
 from ..models import Activity, ImportJob, ImportJobStatus, User
 from .coverage_sql import persist_track_and_new_coverage
 from .strava import (
     activity_from_payload,
-    iter_activity_pages,
     fetch_latlng_stream,
     get_authenticated_connection,
+    iter_activity_pages,
 )
 
 
-async def run_history_import(job_id: int, user_id: int) -> None:
+def _as_utc_timestamp(value: datetime) -> int:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return int(value.timestamp())
+
+
+def _incremental_after_timestamp(db, user_id: int) -> int | None:
+    latest_started_at = db.scalar(select(func.max(Activity.started_at)).where(Activity.user_id == user_id))
+    if latest_started_at is None:
+        return None
+    overlap_start = latest_started_at - timedelta(days=settings.strava_sync_overlap_days)
+    return _as_utc_timestamp(overlap_start)
+
+
+async def run_strava_sync(job_id: int, user_id: int, *, full: bool = False) -> None:
     db = SessionLocal()
     try:
         job = db.get(ImportJob, job_id)
@@ -26,10 +41,11 @@ async def run_history_import(job_id: int, user_id: int) -> None:
         db.commit()
 
         connection = await get_authenticated_connection(db, user)
+        after = None if full else _incremental_after_timestamp(db, user.id)
         has_existing_activities = db.scalar(select(Activity.id).where(Activity.user_id == user.id).limit(1)) is not None
         consecutive_existing = 0
 
-        async for batch in iter_activity_pages(connection, per_page=30):
+        async for batch in iter_activity_pages(connection, per_page=settings.strava_import_page_size, after=after):
             for payload in batch:
                 job.activities_seen += 1
                 existing = db.scalar(
@@ -54,7 +70,9 @@ async def run_history_import(job_id: int, user_id: int) -> None:
                 db.commit()
 
             db.commit()
-            if has_existing_activities and consecutive_existing >= 30:
+            # Safety valve for explicit full backfills. Normal sync uses Strava's `after` filter,
+            # so it should only receive recent candidates and does not need to walk the library.
+            if full and has_existing_activities and consecutive_existing >= settings.strava_full_import_existing_stop_after:
                 break
 
         job.status = ImportJobStatus.completed
@@ -76,3 +94,7 @@ async def run_history_import(job_id: int, user_id: int) -> None:
             db.commit()
     finally:
         db.close()
+
+
+async def run_history_import(job_id: int, user_id: int) -> None:
+    await run_strava_sync(job_id, user_id, full=True)
