@@ -3,6 +3,7 @@ import json
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..models import Activity
 
 
@@ -38,8 +39,9 @@ def persist_track_and_new_coverage(db: Session, activity: Activity, points: list
                 where geometry is not null and not ST_IsEmpty(geometry) and ST_Length(geometry::geography) > 0
                 returning geometry
             ), existing as (
-                select ST_Buffer(ST_UnaryUnion(ST_Collect(geometry)), 0.00003) as geometry
+                select ST_Buffer(ST_UnaryUnion(ST_Collect(captured_geometries.geometry)), 0.00003) as geometry
                 from captured_geometries
+                join raw_insert on captured_geometries.geometry && ST_Expand(raw_insert.geometry, :lookup_degrees)
                 where user_id = :user_id and atlas_type = :atlas_type
             ), uncovered as (
                 select
@@ -65,6 +67,7 @@ def persist_track_and_new_coverage(db: Session, activity: Activity, points: list
             "user_id": activity.user_id,
             "atlas_type": activity.atlas_type.value,
             "activity_id": activity.id,
+            "lookup_degrees": settings.coverage_lookup_degrees,
         },
     )
     return inserted_id is not None

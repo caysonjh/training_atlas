@@ -41,6 +41,11 @@ async def startup() -> None:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
     if settings.create_tables_on_startup:
         Base.metadata.create_all(bind=engine)
+        with engine.begin() as connection:
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_raw_tracks_geometry ON raw_tracks USING gist (geometry)"))
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_captured_geometries_geometry ON captured_geometries USING gist (geometry)")
+            )
     if settings.recover_jobs_on_startup:
         with SessionLocal() as db:
             db.execute(
