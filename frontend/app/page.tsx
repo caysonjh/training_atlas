@@ -73,6 +73,7 @@ export default function Home() {
   const mapRef = useRef<Map | null>(null);
   const markerRefs = useRef<maplibregl.Marker[]>([]);
   const selectedMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [coverage, setCoverage] = useState<FeatureCollection>({ type: "FeatureCollection", features: [] });
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>(
@@ -303,6 +304,9 @@ export default function Home() {
       setPhotos((current) => [...current, photo]);
       setCaption("");
       setPhotoFile(null);
+      if (photoInputRef.current) {
+        photoInputRef.current.value = "";
+      }
       setSelectedPoint(null);
     } catch (error) {
       setUploadError(
@@ -375,10 +379,19 @@ export default function Home() {
           <div className="memory-form">
             <p>{selectedPoint ? "Location selected — pending pin placed on the map." : "Click the map to choose a location."}</p>
             <input
+              ref={photoInputRef}
+              className="photo-file-input"
               type="file"
               accept="image/*"
-              onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)}
+              onChange={(event) => {
+                setPhotoFile(event.target.files?.[0] ?? null);
+                setUploadError(null);
+              }}
             />
+            <button type="button" className="secondary" onClick={() => photoInputRef.current?.click()}>
+              Choose photo
+            </button>
+            <p className="file-selection">{photoFile ? photoFile.name : "No photo selected."}</p>
             <input
               type="text"
               placeholder="Caption"

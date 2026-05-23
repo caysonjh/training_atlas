@@ -218,6 +218,21 @@ h2 {
 }
 
 
+
+.photo-file-input {
+  display: none;
+}
+
+.memory-form .secondary {
+  text-align: center;
+}
+
+.file-selection {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .form-error {
   margin: 0;
   color: #9f3f21;
