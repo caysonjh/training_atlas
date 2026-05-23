@@ -1,11 +1,35 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import maplibregl, { GeoJSONSource, Map } from "maplibre-gl";
+import maplibregl, { GeoJSONSource, Map, StyleSpecification } from "maplibre-gl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const MAP_STYLE_URL =
-  process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/positron";
+const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL;
+const DEFAULT_MAP_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    cartoLight: {
+      type: "raster",
+      tiles: [
+        "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    },
+  },
+  layers: [
+    {
+      id: "carto-light",
+      type: "raster",
+      source: "cartoLight",
+      minzoom: 0,
+      maxzoom: 20,
+    },
+  ],
+};
 
 const layers = [
   { key: "road_cycling", label: "Road cycling", color: "#c84e3c" },
@@ -102,7 +126,7 @@ export default function Home() {
     if (!mapNode.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: mapNode.current,
-      style: MAP_STYLE_URL,
+      style: MAP_STYLE_URL ?? DEFAULT_MAP_STYLE,
       center: [-119.5, 39.5],
       zoom: 4,
     });
