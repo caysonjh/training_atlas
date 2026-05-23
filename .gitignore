@@ -18,3 +18,6 @@ frontend/out/
 # Local artifacts
 *.dump
 .DS_Store
+
+# Local uploaded photos
+backend/data/photos/

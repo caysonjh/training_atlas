@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     strava_client_secret: str = Field(default="", validation_alias=AliasChoices("STRAVA_CLIENT_SECRET", "client_secret"))
     strava_verify_token: str = "change-me"
     strava_webhook_secret: str = ""
+    local_photo_dir: Path = ROOT_DIR / "backend" / "data" / "photos"
+    media_photos_path: str = "/media/photos"
+    # Legacy S3 settings are ignored in the local-first photo flow.
     s3_endpoint_url: str = "http://localhost:9000"
     s3_access_key: str = "minioadmin"
     s3_secret_key: str = "minioadmin"
@@ -38,6 +41,12 @@ class Settings(BaseSettings):
     strava_full_import_existing_stop_after: int = 200
     coverage_lookup_degrees: float = 0.02
     captured_min_segment_meters: float = 10.0
+
+    @field_validator("local_photo_dir", mode="before")
+    @classmethod
+    def resolve_local_photo_dir(cls, value):
+        path = Path(value)
+        return path if path.is_absolute() else ROOT_DIR / path
 
 
 settings = Settings()

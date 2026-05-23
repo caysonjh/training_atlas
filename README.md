@@ -23,7 +23,7 @@ Local Postgres + PostGIS
 
 ## Requirements
 
-- Docker Desktop, for local Postgres/PostGIS and MinIO photo storage
+- Docker Desktop, for local Postgres/PostGIS
 - Python 3.11+
 - Node.js 18+
 - A Strava API app
@@ -70,7 +70,7 @@ localhost
 If you do not want to use the launcher script:
 
 ```bash
-docker compose up -d db minio
+docker compose up -d db
 
 cd backend
 python -m venv .venv
@@ -111,6 +111,10 @@ POST /imports/strava/history
 
 It is intentionally not the primary UI action anymore.
 
+## Photo storage
+
+Photo uploads are saved locally under `backend/data/photos/` and served by FastAPI at `/media/photos/...`. MinIO/S3 settings are legacy and are not required for the local-first workflow.
+
 ## Environment knobs
 
 Useful local settings in `.env`:
@@ -134,5 +138,5 @@ SESSION_COOKIE_SAMESITE=lax
 - Atlas maps exact traveled GPS paths rather than official road segments.
 - Repeated routes do not visually thicken the atlas.
 - Pool swims are ignored; only GPS-bearing open-water swims are mapped.
-- Photo markers are uploaded manually in v1.
+- Photo markers are uploaded manually and stored under `backend/data/photos/` in the local-first app.
 - Future hosted deployment can still be revisited later, but local-first removes the Render memory and Supabase pooler failure modes from daily use.

@@ -72,6 +72,7 @@ export default function Home() {
   const mapNode = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const markerRefs = useRef<maplibregl.Marker[]>([]);
+  const selectedMarkerRef = useRef<maplibregl.Marker | null>(null);
   const [coverage, setCoverage] = useState<FeatureCollection>({ type: "FeatureCollection", features: [] });
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>(
@@ -90,6 +91,7 @@ export default function Home() {
   const [connectNotice, setConnectNotice] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadAtlas() {
@@ -152,6 +154,8 @@ export default function Home() {
     });
     mapRef.current = map;
     return () => {
+      selectedMarkerRef.current?.remove();
+      selectedMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -173,6 +177,23 @@ export default function Home() {
       }
     }
   }, [visibleLayers]);
+
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    selectedMarkerRef.current?.remove();
+    selectedMarkerRef.current = null;
+    if (!selectedPoint) return;
+
+    const element = document.createElement("div");
+    element.className = "selected-location-pin";
+    element.setAttribute("aria-label", "Selected photo location");
+    element.innerHTML = '<span class="selected-location-pin-head"></span><span class="selected-location-pin-tip"></span>';
+    selectedMarkerRef.current = new maplibregl.Marker({ element, anchor: "bottom" })
+      .setLngLat([selectedPoint.longitude, selectedPoint.latitude])
+      .addTo(map);
+  }, [selectedPoint]);
 
   const totalUniqueMiles = ((mapStats?.total_unique_distance_meters ?? 0) / 1609.344).toFixed(1);
   async function connectStrava() {
@@ -259,24 +280,41 @@ export default function Home() {
   async function uploadPhoto() {
     if (!selectedPoint || !photoFile) return;
     setUploading(true);
+    setUploadError(null);
     const form = new FormData();
     form.append("longitude", String(selectedPoint.longitude));
     form.append("latitude", String(selectedPoint.latitude));
     form.append("caption", caption);
     form.append("file", photoFile);
-    const response = await fetch(`${API_URL}/photos`, {
-      method: "POST",
-      body: form,
-      credentials: "include",
-    });
-    if (response.ok) {
+    try {
+      const response = await fetch(`${API_URL}/photos`, {
+        method: "POST",
+        body: form,
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `Atlas returned ${response.status}`);
+      }
       const photo = await response.json();
+      if (!photo?.image_url || typeof photo.longitude !== "number" || typeof photo.latitude !== "number") {
+        throw new Error("Atlas returned an invalid photo marker.");
+      }
       setPhotos((current) => [...current, photo]);
       setCaption("");
       setPhotoFile(null);
       setSelectedPoint(null);
+    } catch (error) {
+      setUploadError(
+        error instanceof TypeError
+          ? "Photo upload failed. Make sure the local backend is running and try again."
+          : error instanceof Error
+            ? error.message
+            : "Photo upload failed. Make sure the local backend is running and try again."
+      );
+    } finally {
+      setUploading(false);
     }
-    setUploading(false);
   }
 
   useEffect(() => {
@@ -335,7 +373,7 @@ export default function Home() {
         <section>
           <h2>Add memory</h2>
           <div className="memory-form">
-            <p>{selectedPoint ? "Location selected" : "Click the map to choose a location."}</p>
+            <p>{selectedPoint ? "Location selected — pending pin placed on the map." : "Click the map to choose a location."}</p>
             <input
               type="file"
               accept="image/*"
@@ -350,6 +388,7 @@ export default function Home() {
             <button disabled={!selectedPoint || !photoFile || uploading} onClick={uploadPhoto}>
               {uploading ? "Uploading…" : "Add photo"}
             </button>
+            {uploadError && <p className="form-error" role="status">{uploadError}</p>}
           </div>
         </section>
         <dl className="stats">

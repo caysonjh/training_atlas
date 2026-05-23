@@ -45,7 +45,7 @@ if [ "$ports_available" = "0" ]; then
 fi
 
 if command -v docker >/dev/null 2>&1 && [ "${ATLAS_SKIP_DOCKER:-0}" != "1" ]; then
-  docker compose up -d db minio
+  docker compose up -d db
 else
   echo "Skipping Docker startup. Ensure Postgres/PostGIS is already running."
 fi

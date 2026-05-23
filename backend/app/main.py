@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
@@ -32,6 +33,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+settings.local_photo_dir.mkdir(parents=True, exist_ok=True)
+app.mount(settings.media_photos_path, StaticFiles(directory=settings.local_photo_dir), name="photo-media")
 
 
 @app.on_event("startup")

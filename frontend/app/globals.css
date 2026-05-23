@@ -217,6 +217,52 @@ h2 {
   object-fit: cover;
 }
 
+
+.form-error {
+  margin: 0;
+  color: #9f3f21;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.selected-location-pin {
+  position: relative;
+  width: 28px;
+  height: 40px;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.28));
+}
+
+.selected-location-pin-head {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(255, 255, 255, 0.96);
+  border-radius: 999px 999px 999px 0;
+  background: #d85e32;
+  transform: translateX(-50%) rotate(-45deg);
+}
+
+.selected-location-pin-head::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.selected-location-pin-tip {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(47, 48, 47, 0.28);
+  transform: translateX(-50%);
+}
+
 @media (max-width: 800px) {
   .atlas-shell {
     grid-template-columns: 1fr;
