@@ -87,6 +87,7 @@ export default function Home() {
   const [selectedPoint, setSelectedPoint] = useState<{ longitude: number; latitude: number } | null>(null);
   const [caption, setCaption] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [draggingPhoto, setDraggingPhoto] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [connectingStrava, setConnectingStrava] = useState(false);
   const [connectNotice, setConnectNotice] = useState<string | null>(null);
@@ -278,6 +279,23 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [importing, importJob?.id]);
 
+
+  function selectPhotoFile(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setUploadError("Please choose an image file.");
+      return;
+    }
+    setPhotoFile(file);
+    setUploadError(null);
+  }
+
+  function handlePhotoDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDraggingPhoto(false);
+    selectPhotoFile(event.dataTransfer.files?.[0] ?? null);
+  }
+
   async function uploadPhoto() {
     if (!selectedPoint || !photoFile) return;
     setUploading(true);
@@ -383,15 +401,25 @@ export default function Home() {
               className="photo-file-input"
               type="file"
               accept="image/*"
-              onChange={(event) => {
-                setPhotoFile(event.target.files?.[0] ?? null);
-                setUploadError(null);
-              }}
+              onChange={(event) => selectPhotoFile(event.target.files?.[0] ?? null)}
             />
-            <button type="button" className="secondary" onClick={() => photoInputRef.current?.click()}>
-              Choose photo
-            </button>
-            <p className="file-selection">{photoFile ? photoFile.name : "No photo selected."}</p>
+            <div
+              className={`photo-drop-zone${draggingPhoto ? " dragging" : ""}`}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                setDraggingPhoto(true);
+              }}
+              onDragOver={(event) => event.preventDefault()}
+              onDragLeave={() => setDraggingPhoto(false)}
+              onDrop={handlePhotoDrop}
+            >
+              <button type="button" className="secondary" onClick={() => photoInputRef.current?.click()}>
+                Choose photo
+              </button>
+              <p className="file-selection">
+                {photoFile ? photoFile.name : "Drop a photo here or choose one."}
+              </p>
+            </div>
             <input
               type="text"
               placeholder="Caption"
