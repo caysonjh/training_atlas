@@ -32,6 +32,12 @@ class PhotoCreate(BaseModel):
     activity_id: int | None = None
 
 
+class PhotoUpdate(BaseModel):
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    caption: str | None = Field(default=None, max_length=500)
+
+
 class ImportJobOut(BaseModel):
     id: int
     status: ImportJobStatus

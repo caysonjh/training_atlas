@@ -24,3 +24,20 @@ async def upload_photo(file: UploadFile) -> str:
     with destination.open("wb") as output:
         copyfileobj(file.file, output)
     return f"{settings.backend_url.rstrip('/')}{settings.media_photos_path}/{key}"
+
+
+def delete_local_photo(image_url: str) -> None:
+    local_prefix = f"{settings.backend_url.rstrip('/')}{settings.media_photos_path}/"
+    path_prefix = f"{settings.media_photos_path}/"
+    key: str | None = None
+    if image_url.startswith(local_prefix):
+        key = image_url.removeprefix(local_prefix)
+    elif image_url.startswith(path_prefix):
+        key = image_url.removeprefix(path_prefix)
+    if not key or "/" in key or ".." in key:
+        return
+    path = settings.local_photo_dir / key
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        return

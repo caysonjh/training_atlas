@@ -76,6 +76,7 @@ export default function Home() {
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [coverage, setCoverage] = useState<FeatureCollection>({ type: "FeatureCollection", features: [] });
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [visibleLayers, setVisibleLayers] = useState<Record<string, boolean>>(
     Object.fromEntries(layers.map((layer) => [layer.key, true]))
   );
@@ -94,6 +95,9 @@ export default function Home() {
   const [connectError, setConnectError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [photoActionError, setPhotoActionError] = useState<string | null>(null);
+  const [movingPhoto, setMovingPhoto] = useState(false);
+  const [deletingPhoto, setDeletingPhoto] = useState(false);
 
   useEffect(() => {
     async function loadAtlas() {
@@ -349,6 +353,11 @@ export default function Home() {
       const element = document.createElement("button");
       element.className = "photo-pin";
       element.title = photo.caption ?? "Training memory";
+      element.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setSelectedPhoto(photo);
+        setPhotoActionError(null);
+      });
       const image = document.createElement("img");
       image.src = photo.image_url;
       image.alt = photo.caption ?? "Training memory";
@@ -358,6 +367,54 @@ export default function Home() {
       );
     }
   }, [photos, photosVisible]);
+
+  async function moveSelectedPhoto() {
+    if (!selectedPhoto || !selectedPoint) return;
+    setMovingPhoto(true);
+    setPhotoActionError(null);
+    try {
+      const response = await fetch(`${API_URL}/photos/${selectedPhoto.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ longitude: selectedPoint.longitude, latitude: selectedPoint.latitude }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `Atlas returned ${response.status}`);
+      }
+      const updated = await response.json();
+      setPhotos((current) => current.map((photo) => (photo.id === updated.id ? updated : photo)));
+      setSelectedPhoto(updated);
+      setSelectedPoint(null);
+    } catch (error) {
+      setPhotoActionError(error instanceof Error ? error.message : "Unable to move photo.");
+    } finally {
+      setMovingPhoto(false);
+    }
+  }
+
+  async function deleteSelectedPhoto() {
+    if (!selectedPhoto) return;
+    setDeletingPhoto(true);
+    setPhotoActionError(null);
+    try {
+      const response = await fetch(`${API_URL}/photos/${selectedPhoto.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? `Atlas returned ${response.status}`);
+      }
+      setPhotos((current) => current.filter((photo) => photo.id !== selectedPhoto.id));
+      setSelectedPhoto(null);
+    } catch (error) {
+      setPhotoActionError(error instanceof Error ? error.message : "Unable to delete photo.");
+    } finally {
+      setDeletingPhoto(false);
+    }
+  }
 
   return (
     <main className="atlas-shell">
@@ -447,12 +504,40 @@ export default function Home() {
               <dd className="import-status">
                 {importJob.status === "failed"
                   ? importJob.error ?? "Failed"
-                  : `${importJob.activities_imported} new / ${importJob.activities_seen || "…"} checked`}
+                  : `${importJob.activities_imported} new / ${importJob.activities_seen || "…"} scanned`}
               </dd>
             </div>
           )}
         </dl>
       </aside>
+
+
+      {selectedPhoto && (
+        <div className="photo-viewer-backdrop" role="dialog" aria-modal="true" aria-label="Photo memory">
+          <div className="photo-viewer">
+            <button className="photo-viewer-close" type="button" onClick={() => setSelectedPhoto(null)} aria-label="Close photo viewer">
+              ×
+            </button>
+            <img src={selectedPhoto.image_url} alt={selectedPhoto.caption ?? "Training memory"} />
+            <div className="photo-viewer-body">
+              <h2>Memory</h2>
+              <p>{selectedPhoto.caption || "No caption."}</p>
+              <p className="photo-viewer-hint">
+                {selectedPoint ? "Selected map pin is ready for moving this photo." : "Click the map to choose a new location before moving."}
+              </p>
+              {photoActionError && <p className="form-error" role="status">{photoActionError}</p>}
+              <div className="photo-viewer-actions">
+                <button type="button" onClick={moveSelectedPhoto} disabled={!selectedPoint || movingPhoto || deletingPhoto}>
+                  {movingPhoto ? "Moving…" : "Move to selected location"}
+                </button>
+                <button type="button" className="danger" onClick={deleteSelectedPhoto} disabled={movingPhoto || deletingPhoto}>
+                  {deletingPhoto ? "Deleting…" : "Delete photo"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="map-wrap">
         <header className="toolbar">

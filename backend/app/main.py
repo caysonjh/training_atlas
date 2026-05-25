@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,7 @@ from .auth import create_session_token, get_current_user
 from .config import settings
 from .db import Base, SessionLocal, engine, get_db
 from .models import Activity, ImportJob, ImportJobStatus, PhotoMarker, StravaWebhookJob, User, WebhookJobStatus
-from .schemas import ActivityOut, ImportJobOut, MapStatsOut, PhotoOut, StravaStatusOut
+from .schemas import ActivityOut, ImportJobOut, MapStatsOut, PhotoOut, PhotoUpdate, StravaStatusOut
 from .services.strava import exchange_code, oauth_url, upsert_user_and_connection
 
 app = FastAPI(title="Atlas API")
@@ -246,6 +246,44 @@ def list_photos(
 ):
     return db.scalars(select(PhotoMarker).where(PhotoMarker.user_id == current_user.id)).all()
 
+
+@app.patch("/photos/{photo_id}", response_model=PhotoOut)
+def update_photo(
+    photo_id: int,
+    payload: PhotoUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    marker = db.get(PhotoMarker, photo_id)
+    if not marker or marker.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    if payload.longitude is not None:
+        marker.longitude = payload.longitude
+    if payload.latitude is not None:
+        marker.latitude = payload.latitude
+    if payload.caption is not None:
+        marker.caption = payload.caption
+    db.commit()
+    db.refresh(marker)
+    return marker
+
+
+@app.delete("/photos/{photo_id}", status_code=204)
+def delete_photo(
+    photo_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    marker = db.get(PhotoMarker, photo_id)
+    if not marker or marker.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    image_url = marker.image_url
+    db.delete(marker)
+    db.commit()
+    from .services.storage import delete_local_photo
+
+    delete_local_photo(image_url)
+    return Response(status_code=204)
 
 @app.get("/webhooks/strava")
 def verify_webhook(
